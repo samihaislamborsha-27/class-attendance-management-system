@@ -1,342 +1,282 @@
 "use client";
 
-import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import AddCourseModel from "../components/AddCourseModel";
-
-type Course = {
-  id: string;
-  code: string;
-  name: string;
-  section: string;
-  students: number;
-  attendance: number;
-  room: string;
-  time: string;
-  semester?: string;
-};
-
-const initialCourses: Course[] = [
-  {
-    id: "software-engineering",
-    code: "SWE",
-    name: "Software Engineering",
-    section: "A",
-    students: 40,
-    attendance: 0,
-    room: "701",
-    time: "11:40 AM",
-    semester: "6th Semester",
-  },
-  {
-    id: "computer-networking",
-    code: "CN",
-    name: "Computer Networking",
-    section: "A",
-    students: 40,
-    attendance: 0,
-    room: "701",
-    time: "12:50 PM",
-    semester: "6th Semester",
-  },
-  {
-    id: "theory-of-computation",
-    code: "TOC",
-    name: "Theory of Computation",
-    section: "A",
-    students: 40,
-    attendance: 0,
-    room: "701",
-    time: "11:40 AM",
-    semester: "6th Semester",
-  },
-  {
-    id: "embedded-system-programming",
-    code: "ESP",
-    name: "Embedded System Programming",
-    section: "A",
-    students: 40,
-    attendance: 0,
-    room: "701",
-    time: "11:40 AM",
-    semester: "6th Semester",
-  },
-];
+import {
+  attendanceStats,
+  errorText,
+  readAttendance,
+  readCourses,
+  writeCourses,
+} from "../lib/classtrack";
+import type { AttendanceRecords, Course } from "../lib/classtrack";
 
 export default function DashboardPage() {
-  const [courses, setCourses] = useState<Course[]>(initialCourses);
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [records, setRecords] = useState<AttendanceRecords>({});
+  const [ready, setReady] = useState(false);
+  const [error, setError] = useState("");
   const [isAddCourseOpen, setIsAddCourseOpen] = useState(false);
+  const [teacherName, setTeacherName] = useState("Teacher");
+  const [photo, setPhoto] = useState("");
 
-  const handleAddCourse = (newCourse: {
+  useEffect(() => {
+    function load() {
+      try {
+        const nextCourses = readCourses();
+        const nextRecords = readAttendance();
+
+        setCourses(nextCourses);
+        setRecords(nextRecords);
+        setError("");
+      } catch (error) {
+        setError(errorText(error));
+      }
+
+      try {
+        const session = JSON.parse(
+          localStorage.getItem("classtrack-demo-session") || "null"
+        );
+
+        const email =
+          typeof session?.email === "string"
+            ? session.email.trim().toLowerCase()
+            : "";
+
+        const profile = email
+          ? JSON.parse(
+              localStorage.getItem(`classtrack-profile-v1:${email}`) || "null"
+            )
+          : null;
+
+        setTeacherName(profile?.name || "Teacher");
+
+        setPhoto(
+          typeof profile?.photo === "string" &&
+            /^data:image\/(jpeg|png|webp);base64,/.test(profile.photo)
+            ? profile.photo
+            : ""
+        );
+      } catch {
+        setTeacherName("Teacher");
+        setPhoto("");
+      }
+
+      setReady(true);
+    }
+
+    const timer = window.setTimeout(load, 0);
+    window.addEventListener("focus", load);
+    window.addEventListener("storage", load);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("focus", load);
+      window.removeEventListener("storage", load);
+    };
+  }, []);
+
+  function handleAddCourse(input: {
     name: string;
     code: string;
     semester: string;
-  }) => {
-    const course: Course = {
-      id: `${newCourse.code.toLowerCase().replace(/\s+/g, "-")}-${Date.now()}`,
-      name: newCourse.name,
-      code: newCourse.code,
-      semester: newCourse.semester,
-      section: "A",
-      students: 0,
-      attendance: 0,
-      room: "TBA",
-      time: "TBA",
-    };
+  }) {
+    try {
+      const latest = readCourses();
 
-    setCourses((currentCourses) => [...currentCourses, course]);
-  };
-
-  const totalStudents = courses.reduce(
-    (total, course) => total + course.students,
-    0
-  );
-
-  const averageAttendance =
-    courses.length > 0
-      ? Math.round(
-          courses.reduce(
-            (total, course) => total + course.attendance,
-            0
-          ) / courses.length
+      if (
+        latest.some(
+          (course) =>
+            course.code.toLowerCase() === input.code.trim().toLowerCase() &&
+            course.semester.toLowerCase() === input.semester.trim().toLowerCase()
         )
-      : 0;
+      ) {
+        window.alert("This course code already exists in that semester.");
+        return;
+      }
+
+      const course: Course = {
+        id: crypto.randomUUID(),
+        name: input.name.trim(),
+        code: input.code.trim().toUpperCase(),
+        semester: input.semester.trim(),
+        teacher: teacherName,
+        section: "A",
+        room: "TBA",
+        time: "TBA",
+        schedule: "Not set",
+        students: [],
+      };
+
+      const next = [...latest, course];
+      writeCourses(next);
+      setCourses(next);
+      setError("");
+      window.alert("Course saved! Click View to add students.");
+    } catch (error) {
+      window.alert(`Course could not be saved. ${errorText(error)}`);
+    }
+  }
+
+  const uniqueStudents = new Set(
+    courses.flatMap((course) =>
+      course.students.map((student) => student.roll.trim().toUpperCase())
+    )
+  ).size;
+
+  const average = attendanceStats(records);
+
+  const initials =
+    teacherName
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((word) => word[0])
+      .join("")
+      .toUpperCase() || "T";
+
+  if (!ready) {
+    return <main className="p-10">Loading dashboard…</main>;
+  }
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900">
-      {/* HEADER */}
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <Link href="/">
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">
-                ClassTrack
-              </h1>
-
-              <p className="text-xs text-slate-500">
-                Daffodil Institute of IT
-              </p>
-            </div>
+      <header className="border-b bg-white">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-5">
+          <Link href="/" className="text-2xl font-bold text-blue-800">
+            Class<span className="text-green-700">Track</span>
           </Link>
 
-          <div className="flex items-center gap-3">
-            <div className="hidden text-right sm:block">
-              <p className="text-sm font-semibold">Teacher Panel</p>
+          <Link
+            href="/profile"
+            className="flex items-center gap-3 rounded-lg p-1"
+          >
+            <span className="hidden font-semibold sm:block">
+              {teacherName}
+            </span>
 
-              <p className="text-xs text-slate-500">
-                Academic Dashboard
-              </p>
-            </div>
-
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 font-bold text-white">
-              T
-            </div>
-          </div>
+            <span className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-blue-800 font-bold text-white">
+              {photo ? (
+                <Image
+                  src={photo}
+                  alt="My profile"
+                  width={48}
+                  height={48}
+                  unoptimized
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                initials
+              )}
+            </span>
+          </Link>
         </div>
       </header>
 
-      <div className="mx-auto max-w-7xl px-6 py-10">
-        {/* TOP */}
-        <section className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
+      <div className="mx-auto max-w-7xl px-5 py-10">
+        <section className="flex flex-wrap items-center justify-between gap-5">
           <div>
-            <p className="mb-2 text-sm font-semibold text-blue-600">
-              TEACHER DASHBOARD
-            </p>
-
-            <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-              Welcome back, Teacher.
-            </h2>
-
-            <p className="mt-3 max-w-2xl text-slate-600">
-              Manage your classes, record attendance and review student
-              attendance from one place.
-            </p>
+            <p className="font-semibold text-green-700">TEACHER DASHBOARD</p>
+            <h1 className="mt-2 text-3xl font-bold">
+              Welcome back, {teacherName}.
+            </h1>
           </div>
 
           <button
             type="button"
+            disabled={Boolean(error)}
             onClick={() => setIsAddCourseOpen(true)}
-            className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
+            className="rounded-xl bg-blue-700 px-5 py-3 font-semibold text-white disabled:opacity-50"
           >
             + Add Course
           </button>
         </section>
 
-        {/* STATS */}
-        <section className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-6">
-            <p className="text-sm font-medium text-slate-500">
-              Total Courses
-            </p>
-
-            <p className="mt-3 text-3xl font-bold">
-              {courses.length}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-6">
-            <p className="text-sm font-medium text-slate-500">
-              Total Students
-            </p>
-
-            <p className="mt-3 text-3xl font-bold">
-              {totalStudents}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-6">
-            <p className="text-sm font-medium text-slate-500">
-              Semester
-            </p>
-
-            <p className="mt-3 text-2xl font-bold">
-              6th
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-6">
-            <p className="text-sm font-medium text-slate-500">
-              Avg. Attendance
-            </p>
-
-            <p className="mt-3 text-3xl font-bold text-blue-600">
-              {averageAttendance}%
-            </p>
-          </div>
-        </section>
-
-        {/* COURSES */}
-        <section className="mt-12">
-          <div className="mb-6 flex items-end justify-between">
-            <div>
-              <p className="text-sm font-semibold text-blue-600">
-                YOUR CLASSES
-              </p>
-
-              <h3 className="mt-1 text-2xl font-bold">
-                Current Courses
-              </h3>
-            </div>
-
-            <p className="hidden text-sm text-slate-500 sm:block">
-              6th Semester · 2026
-            </p>
-          </div>
-
-          <div className="grid gap-5 md:grid-cols-2">
-            {courses.map((course) => (
-              <article
-                key={course.id}
-                className="overflow-hidden rounded-2xl border border-slate-200 bg-white"
-              >
-                <div className="border-b border-slate-100 p-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <span className="text-sm font-semibold text-blue-600">
-                        {course.code}
-                      </span>
-
-                      <h4 className="mt-2 text-xl font-bold">
-                        {course.name}
-                      </h4>
-
-                      {course.semester && (
-                        <p className="mt-1 text-sm text-slate-500">
-                          {course.semester}
-                        </p>
-                      )}
-                    </div>
-
-                    <span className="rounded-lg bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                      Section {course.section}
-                    </span>
-                  </div>
-
-                  <div className="mt-6 grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <p className="text-slate-500">Students</p>
-                      <p className="mt-1 font-semibold">
-                        {course.students}
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="text-slate-500">Attendance</p>
-                      <p className="mt-1 font-semibold text-green-600">
-                        {course.attendance}%
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="text-slate-500">Room</p>
-                      <p className="mt-1 font-semibold">
-                        {course.room}
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="text-slate-500">Class Time</p>
-                      <p className="mt-1 font-semibold">
-                        {course.time}
-                      </p>
-                    </div>
-                  </div>
+        {error ? (
+          <p role="alert" className="mt-8 rounded-xl bg-red-50 p-5 text-red-700">
+            {error} Refresh to retry. Existing data has not been changed.
+          </p>
+        ) : (
+          <>
+            <section className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                ["Courses", courses.length],
+                ["Unique students", uniqueStudents],
+                ["Saved sessions", Object.keys(records).length],
+                ["Overall attendance", average.percentage],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-2xl border bg-white p-6">
+                  <p className="text-slate-500">{label}</p>
+                  <p className="mt-3 text-3xl font-bold text-blue-800">
+                    {value}
+                  </p>
                 </div>
+              ))}
+            </section>
 
-                <div className="flex gap-3 p-4">
-                  <Link
-                    href={`/attendance?course=${course.id}`}
-                    className="flex-1 rounded-lg bg-blue-600 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-blue-700"
-                  >
-                    Take Attendance
-                  </Link>
+            <p className="mt-3 text-sm text-slate-500">
+              Attendance is calculated from saved present and absent marks.
+              Students are counted by roll number.
+            </p>
 
-                  <Link
-                    href={`/course/${course.id}`}
-                    className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold transition hover:bg-slate-50"
-                  >
-                    View
-                  </Link>
-                </div>
-              </article>
-            ))}
-          </div>
-        </section>
+            <section className="mt-10">
+              <h2 className="mb-5 text-2xl font-bold">Your courses</h2>
 
-        {/* NEXT CLASS */}
-        <section className="mt-12 rounded-2xl bg-slate-900 p-7 text-white sm:p-8">
-          <div className="flex flex-col justify-between gap-6 md:flex-row md:items-center">
-            <div>
-              <p className="text-sm font-semibold text-blue-300">
-                NEXT CLASS
-              </p>
+              <div className="grid gap-5 md:grid-cols-2">
+                {courses.map((course) => {
+                  const stats = attendanceStats(records, course.id);
 
-              <h3 className="mt-2 text-2xl font-bold">
-                Software Engineering — Section A
-              </h3>
+                  return (
+                    <article key={course.id} className="rounded-2xl border bg-white p-6">
+                      <p className="font-semibold text-green-700">{course.code}</p>
+                      <h3 className="mt-2 text-xl font-bold">{course.name}</h3>
+                      <p className="mt-2 text-sm text-slate-500">
+                        {course.semester} · Section {course.section}
+                      </p>
 
-              <p className="mt-2 text-sm text-slate-300">
-                11:40 AM · Room 701
-              </p>
-            </div>
+                      <dl className="mt-6 grid grid-cols-2 gap-5">
+                        {[
+                          ["Students", course.students.length],
+                          ["Attendance", stats.percentage],
+                          ["Room", course.room],
+                          ["Class time", course.time],
+                        ].map(([label, value]) => (
+                          <div key={label}>
+                            <dt className="text-sm text-slate-500">{label}</dt>
+                            <dd className="mt-1 font-semibold">{value}</dd>
+                          </div>
+                        ))}
+                      </dl>
 
-            <Link
-              href="/attendance?course=software-engineering"
-              className="rounded-xl bg-white px-5 py-3 text-center text-sm font-bold text-slate-900 transition hover:bg-slate-100"
-            >
-              Start Attendance
-            </Link>
-          </div>
-        </section>
+                      <div className="mt-6 flex flex-wrap gap-3">
+                        <Link
+                          href={`/attendance?course=${encodeURIComponent(course.id)}`}
+                          className="rounded-lg bg-blue-700 px-4 py-3 font-semibold text-white"
+                        >
+                          Take Attendance
+                        </Link>
+                        <Link
+                          href={`/course/${encodeURIComponent(course.id)}`}
+                          className="rounded-lg border px-4 py-3 font-semibold text-green-800"
+                        >
+                          View / Students
+                        </Link>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          </>
+        )}
 
-        {/* FOOTER */}
-        <footer className="mt-14 border-t border-slate-200 py-6 text-center text-sm text-slate-500">
-          ClassTrack · Daffodil Institute of IT · Class Attendance Management
-          System
+        <footer className="mt-12 border-t pt-6 text-center text-sm text-slate-500">
+          Daffodil Institute of IT · Saved in this browser only
         </footer>
       </div>
 
-      {/* ADD COURSE MODAL */}
       <AddCourseModel
         isOpen={isAddCourseOpen}
         onClose={() => setIsAddCourseOpen(false)}

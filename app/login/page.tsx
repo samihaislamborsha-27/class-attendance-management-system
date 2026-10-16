@@ -1,178 +1,236 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
+
+const SESSION_KEY = "classtrack-demo-session";
 
 export default function LoginPage() {
   const router = useRouter();
 
+  const [ready, setReady] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [signedInEmail, setSignedInEmail] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleLogin = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+  useEffect(() => {
+    function readSession() {
+      try {
+        const saved = localStorage.getItem(SESSION_KEY);
+        const session: unknown = saved ? JSON.parse(saved) : null;
 
-    if (!email || !password) {
-      alert("Please enter your email and password.");
+        if (
+          session &&
+          typeof session === "object" &&
+          "email" in session &&
+          typeof session.email === "string"
+        ) {
+          setSignedInEmail(session.email);
+        } else {
+          setSignedInEmail("");
+        }
+      } catch {
+        setSignedInEmail("");
+        setError("Browser storage is unavailable. Please try again.");
+      }
+
+      setReady(true);
+    }
+
+    const timer = window.setTimeout(readSession, 0);
+
+    window.addEventListener("storage", readSession);
+    window.addEventListener("focus", readSession);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("storage", readSession);
+      window.removeEventListener("focus", readSession);
+    };
+  }, []);
+
+  function handleLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+
+    const cleanEmail = email.trim();
+
+    if (!cleanEmail || !password.trim()) {
+      setError("Enter your email and password.");
       return;
     }
 
-    router.push("/dashboard");
-  };
+    try {
+      // Demo session only. Never save the password.
+      localStorage.setItem(
+        SESSION_KEY,
+        JSON.stringify({ email: cleanEmail })
+      );
+
+      setSignedInEmail(cleanEmail);
+      setPassword("");
+
+      window.alert("Signed in successfully!");
+      router.push("/dashboard");
+    } catch {
+      setError("Could not remember your sign-in. Check browser storage.");
+    }
+  }
+
+  function handleSignOut() {
+    try {
+      localStorage.removeItem(SESSION_KEY);
+      setSignedInEmail("");
+      setEmail("");
+      setPassword("");
+      setError("");
+    } catch {
+      setError("Could not sign out. Please try again.");
+    }
+  }
+
+  const inputClass =
+    "w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none focus:border-blue-700 focus:ring-2 focus:ring-blue-100";
 
   return (
-    <main className="min-h-screen bg-slate-50">
-      <div className="grid min-h-screen lg:grid-cols-2">
-        {/* LEFT SIDE */}
-        <section className="hidden bg-slate-900 p-12 text-white lg:flex lg:flex-col lg:justify-between">
-          <Link href="/" className="inline-block">
-            <h1 className="text-2xl font-bold">ClassTrack</h1>
-            <p className="mt-1 text-sm text-slate-400">
-              Daffodil Institute of IT
-            </p>
-          </Link>
+    <main className="flex min-h-screen items-center justify-center bg-linear-to-br from-green-50 via-white to-blue-50 px-5 py-12 text-slate-900">
+      <section className="w-full max-w-md rounded-2xl border border-green-100 bg-white p-7 shadow-sm sm:p-9">
+        <Link
+          href="/"
+          className="text-2xl font-bold text-blue-800"
+        >
+          Class<span className="text-green-700">Track</span>
+        </Link>
 
-          <div className="max-w-lg">
-            <p className="mb-4 text-sm font-semibold uppercase tracking-wider text-blue-400">
-              Attendance Management
-            </p>
+        {!ready ? (
+          <p className="mt-8 text-slate-600">Loading…</p>
+        ) : signedInEmail ? (
+          <div className="mt-8">
+            <div className="rounded-xl bg-green-50 p-5">
+              <h1 className="text-xl font-bold text-green-800">
+                You’re already signed in
+              </h1>
 
-            <h2 className="text-5xl font-bold leading-tight">
-              Your classroom,
-              <span className="block text-blue-400">
-                organized in one place.
-              </span>
-            </h2>
-
-            <p className="mt-6 text-lg leading-8 text-slate-300">
-              Record attendance, manage courses and monitor student attendance
-              through one simple teacher dashboard.
-            </p>
-          </div>
-
-          <p className="text-sm text-slate-500">
-            ClassTrack · Academic Attendance System
-          </p>
-        </section>
-
-        {/* RIGHT SIDE */}
-        <section className="flex items-center justify-center bg-white px-6 py-12">
-          <div className="w-full max-w-md">
-            {/* MOBILE LOGO */}
-            <Link href="/" className="mb-12 block lg:hidden">
-              <h1 className="text-2xl font-bold text-slate-900">ClassTrack</h1>
-              <p className="text-sm text-slate-500">
-                Daffodil Institute of IT
-              </p>
-            </Link>
-
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-wider text-blue-600">
-                Teacher Portal
-              </p>
-
-              <h2 className="mt-3 text-4xl font-bold tracking-tight text-slate-900">
-                Welcome back.
-              </h2>
-
-              <p className="mt-3 text-slate-500">
-                Sign in to access your attendance dashboard.
+              <p className="mt-2 break-all text-slate-600">
+                {signedInEmail}
               </p>
             </div>
 
-            <form onSubmit={handleLogin} className="mt-10 space-y-6">
-              {/* EMAIL */}
+            <Link
+              href="/dashboard"
+              className="mt-6 block rounded-xl bg-blue-800 px-5 py-3 text-center font-semibold text-white hover:bg-blue-900"
+            >
+              Open Dashboard
+            </Link>
+            <Link
+             href="/profile"
+             className="mt-3 block rounded-xl border border-green-700 px-5 py-3 text-center font-semibold text-green-800 hover:bg-green-50"
+            >
+            My Profile
+            </Link>
+
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="mt-3 w-full rounded-xl border border-slate-300 px-5 py-3 font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Sign out
+            </button>
+          </div>
+        ) : (
+          <>
+            <h1 className="mt-8 text-2xl font-bold">
+              Teacher Login
+            </h1>
+
+            <p className="mt-2 text-sm text-slate-500">
+              Demo access · No password verification yet.
+            </p>
+
+            <form onSubmit={handleLogin} className="mt-6 space-y-5">
               <div>
                 <label
                   htmlFor="email"
-                  className="mb-2 block text-sm font-semibold text-slate-700"
+                  className="mb-2 block font-medium"
                 >
-                  Email address
+                  Email
                 </label>
 
                 <input
                   id="email"
                   type="email"
+                  required
+                  autoComplete="username"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="teacher@diit.edu"
-                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3.5 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                  onChange={(event) => setEmail(event.target.value)}
+                  placeholder="Your email address"
+                  className={inputClass}
                 />
               </div>
 
-              {/* PASSWORD */}
               <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <label
-                    htmlFor="password"
-                    className="text-sm font-semibold text-slate-700"
-                  >
-                    Password
-                  </label>
-
-                  <button
-                    type="button"
-                    className="text-sm font-semibold text-blue-600 hover:text-blue-700"
-                  >
-                    Forgot password?
-                  </button>
-                </div>
+                <label
+                  htmlFor="password"
+                  className="mb-2 block font-medium"
+                >
+                  Password
+                </label>
 
                 <div className="relative">
                   <input
                     id="password"
                     type={showPassword ? "text" : "password"}
+                    required
+                    autoComplete="current-password"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter your password"
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3.5 pr-20 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
+                    onChange={(event) =>
+                      setPassword(event.target.value)
+                    }
+                    placeholder="Demo password"
+                    className={`${inputClass} pr-20`}
                   />
 
                   <button
                     type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-500 hover:text-slate-900"
+                    aria-label={
+                      showPassword ? "Hide password" : "Show password"
+                    }
+                    aria-pressed={showPassword}
+                    onClick={() => setShowPassword((value) => !value)}
+                    className="absolute inset-y-0 right-4 text-sm font-semibold text-blue-800"
                   >
                     {showPassword ? "Hide" : "Show"}
                   </button>
                 </div>
               </div>
 
-              {/* REMEMBER */}
-              <label className="flex cursor-pointer items-center gap-3 text-sm text-slate-600">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-slate-300 accent-blue-600"
-                />
-                Remember me
-              </label>
-
-              {/* LOGIN */}
               <button
                 type="submit"
-                className="w-full rounded-xl bg-blue-600 px-5 py-3.5 font-semibold text-white transition hover:bg-blue-700"
+                className="w-full rounded-xl bg-green-700 px-5 py-3 font-semibold text-white transition hover:bg-green-800"
               >
                 Sign In
               </button>
             </form>
+          </>
+        )}
 
-            <div className="mt-8 border-t border-slate-200 pt-6">
-              <p className="text-center text-sm text-slate-500">
-                Teacher access only
-              </p>
+        {error && (
+          <p role="alert" className="mt-5 text-sm text-red-700">
+            {error}
+          </p>
+        )}
 
-              <Link
-                href="/"
-                className="mt-4 block text-center text-sm font-semibold text-blue-600 hover:text-blue-700"
-              >
-                ← Back to homepage
-              </Link>
-            </div>
-          </div>
-        </section>
-      </div>
+        <Link
+          href="/"
+          className="mt-6 block text-center text-sm font-semibold text-blue-800"
+        >
+          ← Back to Home
+        </Link>
+      </section>
     </main>
   );
 }
